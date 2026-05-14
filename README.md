@@ -77,7 +77,7 @@
 | **Output Schema** | `database` (string), `collections` (array of {name, type, documentCount, size, indexCount}), `totalCount` (number) |
 | **Annotations** | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 | **Error Codes** | `DATABASE_NOT_FOUND`, `LIST_COLLECTIONS_FAILED` |
-| **Status** | [ ] TODO |
+| **Status** | [x] DONE |
 
 ### **1.7 - `create_collection`**
 | Property | Value |
@@ -90,7 +90,7 @@
 | **Annotations** | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: false`, `openWorldHint: false` |
 | **Validation** | Collection name: letters, numbers, underscores, max 255 chars, no "system." prefix |
 | **Error Codes** | `DATABASE_NOT_FOUND`, `COLLECTION_EXISTS`, `INVALID_COLLECTION_NAME`, `CREATE_COLLECTION_FAILED` |
-| **Status** | [ ] TODO |
+| **Status** | [x] DONE |
 
 ### **1.8 - `drop_collection`**
 | Property | Value |
@@ -103,7 +103,7 @@
 | **Annotations** | `readOnlyHint: false`, `destructiveHint: true`, `idempotentHint: false`, `openWorldHint: false` |
 | **Validation** | Cannot drop system collections (system.*) |
 | **Error Codes** | `DATABASE_NOT_FOUND`, `COLLECTION_NOT_FOUND`, `SYSTEM_COLLECTION_PROTECTED`, `CONFIRMATION_FAILED` |
-| **Status** | [ ] TODO |
+| **Status** | [x] DONE |
 
 ### **1.9 - `rename_collection`**
 | Property | Value |
@@ -115,7 +115,7 @@
 | **Output Schema** | `database` (string), `oldName` (string), `newName` (string), `renamed` (boolean), `documentCount` (number) |
 | **Annotations** | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: false`, `openWorldHint: false` |
 | **Error Codes** | `DATABASE_NOT_FOUND`, `COLLECTION_NOT_FOUND`, `COLLECTION_EXISTS`, `RENAME_FAILED` |
-| **Status** | [ ] TODO |
+| **Status** | [x] DONE |
 
 ### **1.10 - `collection_stats`**
 | Property | Value |
