@@ -20,6 +20,15 @@ import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-com
 import { addIndexTool } from "./db-administration/add-index";
 import { listIndexesTool } from "./db-administration/list-indexes";
 import { dropIndexTool } from "./db-administration/drop-index";
+import { listFieldsTool } from "./db-administration/list-fields";
+import { insertOneTool } from "./crud/insert-one";
+import { updateOneTool } from "./crud/update-one";
+import { findDocumentsTool } from "./crud/find-documents";
+import { findOneTool } from "./crud/find-one";
+import { deleteOneTool } from "./crud/delete-one";
+import { insertManyTool } from "./crud/insert-many";
+import { updateManyTool } from "./crud/update-many";
+import { deleteManyTool } from "./crud/delete-many";
 
 interface ToolDefinition {
 	name: string;
@@ -46,6 +55,7 @@ export const tools: ToolDefinition[] = [
 	dropCollectionTool,
 	renameCollectionTool,
 	collectionStatsTool,
+	listFieldsTool,
 	// Schema
 	addStringFieldTool,
 	addNumberFieldTool,
@@ -57,4 +67,13 @@ export const tools: ToolDefinition[] = [
 	addIndexTool,
 	listIndexesTool,
 	dropIndexTool,
+	// CRUD Operations
+	findOneTool,
+	findDocumentsTool,
+	insertOneTool,
+	insertManyTool,
+	updateOneTool,
+	updateManyTool,
+	deleteOneTool,
+	deleteManyTool,
 ];
