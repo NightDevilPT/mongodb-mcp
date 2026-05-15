@@ -127,7 +127,7 @@
 | **Output Schema** | `database` (string), `collection` (string), `documentCount` (number), `size` (string), `avgDocumentSize` (string), `storageSize` (string), `indexCount` (number), `indexSize` (string), `indexDetails` (array, optional), `validator` (object, nullable) |
 | **Annotations** | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 | **Error Codes** | `DATABASE_NOT_FOUND`, `COLLECTION_NOT_FOUND`, `STATS_FAILED` |
-| **Status** | [ ] TODO |
+| **Status** | [x] DONE |
 
 ### **1.11 - `manage_indexes`**
 | Property | Value |

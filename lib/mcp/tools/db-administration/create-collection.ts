@@ -1,4 +1,4 @@
-// lib/mcp/tools/list-collections.ts
+// lib/mcp/tools/create-collection.ts
 import { z } from "zod";
 import type { ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
@@ -8,6 +8,10 @@ import type {
 	ServerNotification,
 } from "@modelcontextprotocol/sdk/types.js";
 import { connectDB } from "@/lib/utils/connection";
+import {
+	validateDatabaseName,
+	validateCollectionName,
+} from "@/lib/utils/field-validation";
 
 type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
@@ -15,47 +19,23 @@ type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 // INPUT SCHEMA
 // ============================================================
 const inputSchema = {
-	database: z.string().describe("Database name to list collections from"),
-	includeStats: z
-		.boolean()
-		.optional()
-		.describe(
-			"Include collection statistics (document count, size, index count)",
-		),
-	namePattern: z
+	database: z.string().describe("Database name"),
+	collection: z
 		.string()
-		.optional()
 		.describe(
-			"Filter collections by name pattern (case-sensitive substring match)",
+			"Collection name (letters, numbers, underscores, max 255 chars, no 'system.' prefix)",
 		),
 };
 
 // ============================================================
-// OUTPUT SCHEMA - Must match structuredContent exactly
+// OUTPUT SCHEMA
 // ============================================================
 const outputSchema = {
 	database: z.string(),
-	collections: z.array(
-		z.object({
-			name: z.string(),
-			type: z.string(),
-			documentCount: z.number(),
-			size: z.string(),
-			indexCount: z.number(),
-		}),
-	),
-	totalCount: z.number(),
+	collection: z.string(),
+	created: z.boolean(),
+	message: z.string(),
 };
-
-// ============================================================
-// UTILITY: FORMAT BYTES TO HUMAN READABLE
-// ============================================================
-function formatBytes(bytes: number): string {
-	if (bytes === 0) return "0 B";
-	const sizes = ["B", "KB", "MB", "GB", "TB"];
-	const i = Math.floor(Math.log(bytes) / Math.log(1024));
-	return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
-}
 
 // ============================================================
 // HANDLER
@@ -63,18 +43,40 @@ function formatBytes(bytes: number): string {
 const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 	let client;
 	try {
-		const { database, includeStats, namePattern } = args as {
+		const { database, collection } = args as {
 			database: string;
-			includeStats?: boolean;
-			namePattern?: string;
+			collection: string;
 		};
 
-		// Validate database name is not empty
-		if (!database || database.trim() === "") {
+		// Validate database name
+		const dbValidation = validateDatabaseName(database);
+		if (!dbValidation.valid) {
 			const errorResult = {
 				database: "",
-				collections: [],
-				totalCount: 0,
+				collection: collection || "",
+				created: false,
+				message: `INVALID_DATABASE_NAME: ${dbValidation.error}`,
+			};
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: JSON.stringify(errorResult, null, 2),
+					},
+				],
+				structuredContent: errorResult,
+				isError: true,
+			};
+		}
+
+		// Validate collection name
+		const colValidation = validateCollectionName(collection);
+		if (!colValidation.valid) {
+			const errorResult = {
+				database,
+				collection: "",
+				created: false,
+				message: `INVALID_COLLECTION_NAME: ${colValidation.error}`,
 			};
 			return {
 				content: [
@@ -91,17 +93,16 @@ const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 		const { client: mongoClient } = await connectDB(extra);
 		client = mongoClient;
 
-		// Check if database exists
+		// Check database exists
 		const adminDb = client.db("admin");
 		const dbList = await adminDb.admin().listDatabases();
-		const dbExists = dbList.databases.some((db) => db.name === database);
-
-		if (!dbExists) {
+		if (!dbList.databases.some((db) => db.name === database)) {
 			await client.close();
 			const errorResult = {
 				database,
-				collections: [],
-				totalCount: 0,
+				collection,
+				created: false,
+				message: `DATABASE_NOT_FOUND: Database '${database}' does not exist`,
 			};
 			return {
 				content: [
@@ -117,51 +118,38 @@ const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 
 		const db = client.db(database);
 
-		// List collections
-		const collectionsList = await db.listCollections().toArray();
-
-		// Apply name pattern filter if provided
-		let filteredCollections = collectionsList;
-		if (namePattern && namePattern.trim() !== "") {
-			filteredCollections = collectionsList.filter((col) =>
-				col.name.includes(namePattern),
-			);
+		// Check collection doesn't exist
+		const collections = await db.listCollections().toArray();
+		if (collections.some((col) => col.name === collection)) {
+			await client.close();
+			const errorResult = {
+				database,
+				collection,
+				created: false,
+				message: `COLLECTION_EXISTS: Collection '${collection}' already exists`,
+			};
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: JSON.stringify(errorResult, null, 2),
+					},
+				],
+				structuredContent: errorResult,
+				isError: true,
+			};
 		}
 
-		// Build collection details
-		const collections = [];
-
-		for (const col of filteredCollections) {
-			let documentCount = 0;
-			let size = "0 B";
-			let indexCount = 0;
-
-			if (includeStats) {
-				try {
-					const colStats = await db.command({ collStats: col.name });
-					documentCount = colStats.count || 0;
-					size = formatBytes(colStats.size || 0);
-					indexCount = colStats.nindexes || 0;
-				} catch {
-					// If stats fail for a collection, use defaults
-				}
-			}
-
-			collections.push({
-				name: col.name,
-				type: col.type || "collection",
-				documentCount,
-				size,
-				indexCount,
-			});
-		}
+		// Create collection
+		await db.createCollection(collection);
 
 		await client.close();
 
 		const result = {
 			database,
-			collections,
-			totalCount: collections.length,
+			collection,
+			created: true,
+			message: `Collection '${collection}' created successfully in database '${database}'`,
 		};
 
 		return {
@@ -177,10 +165,10 @@ const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 		if (client) await client.close();
 		const errorResult = {
 			database: (args as { database: string }).database || "",
-			collections: [],
-			totalCount: 0,
+			collection: (args as { collection: string }).collection || "",
+			created: false,
+			message: `CREATE_COLLECTION_FAILED: ${error instanceof Error ? error.message : "Unknown error"}`,
 		};
-
 		return {
 			content: [
 				{
@@ -197,25 +185,25 @@ const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 // ============================================================
 // EXPORT
 // ============================================================
-export const listCollectionsTool = {
-	name: "list_collections",
+export const createCollectionTool = {
+	name: "create_collection",
 	config: {
-		title: "List Collections",
+		title: "Create Collection",
 		description:
-			"[Database Administration] List all collections in a database with optional statistics (document count, size, index count) and name pattern filtering.",
+			"[Database Administration] Create a new empty collection. Use 'add_fields' tool separately to define field schema, validation, and indexes.",
 		inputSchema,
 		outputSchema,
 		annotations: {
-			title: "List Collections",
-			readOnlyHint: true,
+			title: "Create Collection",
+			readOnlyHint: false,
 			destructiveHint: false,
-			idempotentHint: true,
+			idempotentHint: false,
 			openWorldHint: false,
 		},
 		_meta: {
 			category: "database",
 			subcategory: "administration",
-			operation: "read",
+			operation: "write",
 			destructive: false,
 			requiresConfirmation: false,
 			version: "1.0.0",

@@ -1,4 +1,4 @@
-// lib/mcp/tools/create-collection.ts
+// lib/mcp/tools/add-number-field.ts
 import { z } from "zod";
 import type { ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
@@ -8,6 +8,12 @@ import type {
 	ServerNotification,
 } from "@modelcontextprotocol/sdk/types.js";
 import { connectDB } from "@/lib/utils/connection";
+import {
+	validateDatabaseName,
+	validateCollectionName,
+	buildFieldDef,
+	updateCollectionValidator,
+} from "@/lib/utils/field-validation";
 
 type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
@@ -16,11 +22,25 @@ type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 // ============================================================
 const inputSchema = {
 	database: z.string().describe("Database name"),
-	collection: z
+	collection: z.string().describe("Collection name"),
+	name: z
 		.string()
-		.describe(
-			"Collection name (letters, numbers, underscores, max 255 chars, no 'system.' prefix)",
-		),
+		.describe("Field name (e.g., 'age', 'price', 'quantity', 'score')"),
+	required: z
+		.boolean()
+		.optional()
+		.describe("Field is required in every document"),
+	unique: z
+		.boolean()
+		.optional()
+		.describe("Create unique index - no duplicate values"),
+	min: z.number().optional().describe("Minimum value"),
+	max: z.number().optional().describe("Maximum value"),
+	default: z.number().optional().describe("Default value"),
+	description: z
+		.string()
+		.optional()
+		.describe("Field description for documentation"),
 };
 
 // ============================================================
@@ -29,16 +49,10 @@ const inputSchema = {
 const outputSchema = {
 	database: z.string(),
 	collection: z.string(),
-	created: z.boolean(),
+	field: z.string(),
+	added: z.boolean(),
 	message: z.string(),
 };
-
-// ============================================================
-// VALIDATION
-// ============================================================
-const COLLECTION_NAME_REGEX = /^[a-zA-Z0-9_]+$/;
-const MAX_COLLECTION_NAME_LENGTH = 255;
-const SYSTEM_PREFIX = "system.";
 
 // ============================================================
 // HANDLER
@@ -46,19 +60,37 @@ const SYSTEM_PREFIX = "system.";
 const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 	let client;
 	try {
-		const { database, collection } = args as {
+		const {
+			database,
+			collection,
+			name,
+			required,
+			unique,
+			min,
+			max,
+			default: defVal,
+			description,
+		} = args as {
 			database: string;
 			collection: string;
+			name: string;
+			required?: boolean;
+			unique?: boolean;
+			min?: number;
+			max?: number;
+			default?: number;
+			description?: string;
 		};
 
-		// Validate database name is not empty
-		if (!database || database.trim() === "") {
+		// Validate database name
+		const dbValidation = validateDatabaseName(database);
+		if (!dbValidation.valid) {
 			const errorResult = {
 				database: "",
 				collection: collection || "",
-				created: false,
-				message:
-					"CREATE_COLLECTION_FAILED: Database name cannot be empty",
+				field: name || "",
+				added: false,
+				message: `INVALID_DATABASE_NAME: ${dbValidation.error}`,
 			};
 			return {
 				content: [
@@ -72,14 +104,15 @@ const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 			};
 		}
 
-		// Validate collection name is not empty
-		if (!collection || collection.trim() === "") {
+		// Validate collection name
+		const colValidation = validateCollectionName(collection);
+		if (!colValidation.valid) {
 			const errorResult = {
 				database,
 				collection: "",
-				created: false,
-				message:
-					"INVALID_COLLECTION_NAME: Collection name cannot be empty",
+				field: name || "",
+				added: false,
+				message: `INVALID_COLLECTION_NAME: ${colValidation.error}`,
 			};
 			return {
 				content: [
@@ -93,13 +126,14 @@ const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 			};
 		}
 
-		// Validate collection name length
-		if (collection.length > MAX_COLLECTION_NAME_LENGTH) {
+		// Validate field name
+		if (!name || name.trim() === "") {
 			const errorResult = {
 				database,
 				collection,
-				created: false,
-				message: `INVALID_COLLECTION_NAME: Collection name exceeds ${MAX_COLLECTION_NAME_LENGTH} characters`,
+				field: "",
+				added: false,
+				message: "INVALID_FIELD_NAME: Field name cannot be empty",
 			};
 			return {
 				content: [
@@ -113,35 +147,15 @@ const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 			};
 		}
 
-		// Validate collection name format
-		if (!COLLECTION_NAME_REGEX.test(collection)) {
+		// Validate min/max
+		if (min !== undefined && max !== undefined && min > max) {
 			const errorResult = {
 				database,
 				collection,
-				created: false,
+				field: name,
+				added: false,
 				message:
-					"INVALID_COLLECTION_NAME: Only letters, numbers, and underscores allowed",
-			};
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: JSON.stringify(errorResult, null, 2),
-					},
-				],
-				structuredContent: errorResult,
-				isError: true,
-			};
-		}
-
-		// Validate no system prefix
-		if (collection.toLowerCase().startsWith(SYSTEM_PREFIX)) {
-			const errorResult = {
-				database,
-				collection,
-				created: false,
-				message:
-					"INVALID_COLLECTION_NAME: Collection name cannot start with 'system.'",
+					"INVALID_FIELD_VALIDATION: min cannot be greater than max",
 			};
 			return {
 				content: [
@@ -168,7 +182,8 @@ const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 			const errorResult = {
 				database,
 				collection,
-				created: false,
+				field: name,
+				added: false,
 				message: `DATABASE_NOT_FOUND: Database '${database}' does not exist`,
 			};
 			return {
@@ -185,19 +200,20 @@ const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 
 		const db = client.db(database);
 
-		// Check if collection already exists
+		// Check if collection exists
 		const collections = await db.listCollections().toArray();
 		const collectionExists = collections.some(
 			(col) => col.name === collection,
 		);
 
-		if (collectionExists) {
+		if (!collectionExists) {
 			await client.close();
 			const errorResult = {
 				database,
 				collection,
-				created: false,
-				message: `COLLECTION_EXISTS: Collection '${collection}' already exists`,
+				field: name,
+				added: false,
+				message: `COLLECTION_NOT_FOUND: Collection '${collection}' does not exist`,
 			};
 			return {
 				content: [
@@ -211,16 +227,74 @@ const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 			};
 		}
 
-		// Create collection
-		await db.createCollection(collection);
+		// Check if field already exists
+		const collInfo = await db
+			.listCollections({ name: collection })
+			.toArray();
+		if (
+			collInfo.length > 0 &&
+			(collInfo[0] as any).options?.validator?.$jsonSchema?.properties?.[
+				name
+			]
+		) {
+			await client.close();
+			const errorResult = {
+				database,
+				collection,
+				field: name,
+				added: false,
+				message: `DUPLICATE_FIELD: Field '${name}' already exists`,
+			};
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: JSON.stringify(errorResult, null, 2),
+					},
+				],
+				structuredContent: errorResult,
+				isError: true,
+			};
+		}
+
+		// Build field definition
+		const fieldDef = buildFieldDef(name, "number", {
+			min,
+			max,
+			description,
+		});
+
+		// Update collection validator
+		await updateCollectionValidator(
+			db,
+			collection,
+			name,
+			fieldDef,
+			required,
+		);
+
+		// Create unique index if requested
+		if (unique) {
+			try {
+				await db
+					.collection(collection)
+					.createIndex(
+						{ [name]: 1 },
+						{ unique: true, background: true },
+					);
+			} catch {
+				// Index creation failed
+			}
+		}
 
 		await client.close();
 
 		const result = {
 			database,
 			collection,
-			created: true,
-			message: `Collection '${collection}' created successfully in database '${database}'`,
+			field: name,
+			added: true,
+			message: `Field '${name}' (number) added successfully to '${collection}'`,
 		};
 
 		return {
@@ -237,8 +311,9 @@ const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 		const errorResult = {
 			database: (args as { database: string }).database || "",
 			collection: (args as { collection: string }).collection || "",
-			created: false,
-			message: `CREATE_COLLECTION_FAILED: ${error instanceof Error ? error.message : "Unknown error"}`,
+			field: (args as { name: string }).name || "",
+			added: false,
+			message: `ADD_FIELD_FAILED: ${error instanceof Error ? error.message : "Unknown error"}`,
 		};
 
 		return {
@@ -257,24 +332,24 @@ const handler: ToolCallback<ZodRawShapeCompat> = async (args, extra) => {
 // ============================================================
 // EXPORT
 // ============================================================
-export const createCollectionTool = {
-	name: "create_collection",
+export const addNumberFieldTool = {
+	name: "add_number_field",
 	config: {
-		title: "Create Collection",
+		title: "Add Number Field",
 		description:
-			"[Database Administration] Create a new collection. Use add_fields tool separately to define field validation schema.",
+			"[Schema] Add a number field to a collection with validation (min, max), required flag, unique index, and default value.",
 		inputSchema,
 		outputSchema,
 		annotations: {
-			title: "Create Collection",
+			title: "Add Number Field",
 			readOnlyHint: false,
 			destructiveHint: false,
 			idempotentHint: false,
 			openWorldHint: false,
 		},
 		_meta: {
-			category: "database",
-			subcategory: "administration",
+			category: "schema",
+			subcategory: "fields",
 			operation: "write",
 			destructive: false,
 			requiresConfirmation: false,
