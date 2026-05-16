@@ -1,4 +1,5 @@
-// lib/mcp/tools/database-stats.ts
+// lib/mcp/tools/db-administration/database-stats.ts
+// Testcases Done
 import { z } from "zod";
 import type { ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";

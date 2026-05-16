@@ -1,4 +1,5 @@
-// lib/mcp/tools/db-connect-check.ts
+// lib/mcp/tools/db-administration/db-connect-check.ts
+// Testcases Done
 import { z } from "zod";
 import type { ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";

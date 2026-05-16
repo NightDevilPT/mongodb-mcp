@@ -1,4 +1,5 @@
-// lib/mcp/tools/drop-collection.ts
+// lib/mcp/tools/db-administration/drop-collection.ts
+// Test Cases Done
 import { z } from "zod";
 import type { ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";

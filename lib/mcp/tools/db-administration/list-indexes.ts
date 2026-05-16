@@ -1,4 +1,4 @@
-// lib/mcp/tools/list-indexes.ts
+// lib/mcp/tools/db-administration/list-indexes.ts
 import { z } from "zod";
 import type { ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";

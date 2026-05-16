@@ -1,4 +1,4 @@
-// lib/mcp/tools/list-databases.ts
+// lib/mcp/tools/db-administration/list-databases.ts
 import { z } from "zod";
 import type { ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";

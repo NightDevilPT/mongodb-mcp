@@ -1,4 +1,4 @@
-// lib/mcp/tools/rename-collection.ts
+// lib/mcp/tools/db-administration/rename-collection.ts
 import { z } from "zod";
 import type { ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
